@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "start": "bash restart.sh",
-    "dev": "bun feishu-agent.ts",
-    "example": "bun index.ts"
+    "dev": "bun run feishu-agent.ts",
+    "example": "bun run index.ts"
   },
   "peerDependencies": {
     "typescript": "^5"

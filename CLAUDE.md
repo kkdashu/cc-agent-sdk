@@ -1,9 +1,9 @@
 
-Default to using pnpm instead of Bun.
+Default to using Bun.
 
-- Use `tsx <file>` instead of `bun <file>` or `ts-node <file>`
-- Use `pnpm test` instead of `jest` or `vitest`
-- Use `pnpm install` instead of `npm install` or `yarn install` or `bun install`
-- Use `pnpm run <script>` instead of `npm run <script>` or `bun run <script>`
-- Use `pnpx <package> <command>` instead of `npx <package> <command>`
+- Use `bun run <file>` instead of `tsx <file>` or `ts-node <file>`
+- Use `bun test` instead of `jest` or `vitest`
+- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
+- Use `bun run <script>` instead of `npm run <script>` or `pnpm run <script>`
+- Use `bunx <package> <command>` instead of `npx <package> <command>`
 - Use `dotenv` to load .env files.

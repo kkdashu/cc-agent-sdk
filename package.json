@@ -1,0 +1,17 @@
+{
+  "name": "cc-agent-sdk",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsx": "^4.21.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.68",
+    "dotenv": "^17.3.1"
+  }
+}

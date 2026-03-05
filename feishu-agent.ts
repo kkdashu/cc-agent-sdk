@@ -115,6 +115,17 @@ async function selfUpdate(chatId: string, messageId: string | undefined, chatTyp
     });
   });
 
+  await new Promise<void>((resolve, reject) => {
+    const install = spawn('bun', ['install'], {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
+    install.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`bun install 失败，退出码 ${code}`));
+    });
+  });
+
   await replyToChat(chatId, messageId, chatType, '✅ 代码已更新，正在用新代码重启...');
 
   // Replace current process with a fresh bun instance
@@ -150,7 +161,7 @@ function toolLabel(name: string): string {
 // ─── Run Claude agent ──────────────────────────────────────────────────────
 
 // Throttle: send at most one progress update every N ms
-const PROGRESS_THROTTLE_MS = 20_000;
+const PROGRESS_THROTTLE_MS = 8_000;
 
 async function runAgent(
   chatId: string,

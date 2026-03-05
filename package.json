@@ -1,13 +1,14 @@
 {
   "name": "cc-agent-sdk",
-  "module": "index.ts",
+  "main": "index.ts",
   "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest",
-    "tsx": "^4.21.0"
+  "scripts": {
+    "start": "tsx index.ts"
   },
-  "peerDependencies": {
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "dependencies": {

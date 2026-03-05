@@ -41,14 +41,37 @@ function isDuplicate(messageId: string): boolean {
   return false;
 }
 
+// ─── Message splitting ─────────────────────────────────────────────────────
+// Feishu text messages have a ~4096 character limit.
+// We split long messages at natural break points (blank lines > newlines > hard cut).
+
+const MAX_MSG_LENGTH = 4000;
+
+function splitMessage(text: string): string[] {
+  if (text.length <= MAX_MSG_LENGTH) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text.trim();
+
+  while (remaining.length > MAX_MSG_LENGTH) {
+    // Prefer splitting at a blank line (paragraph boundary)
+    let splitAt = remaining.lastIndexOf('\n\n', MAX_MSG_LENGTH);
+    // Fall back to any newline
+    if (splitAt < MAX_MSG_LENGTH / 2) splitAt = remaining.lastIndexOf('\n', MAX_MSG_LENGTH);
+    // Last resort: hard cut at limit
+    if (splitAt < MAX_MSG_LENGTH / 2) splitAt = MAX_MSG_LENGTH;
+
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 // ─── Reply helper ──────────────────────────────────────────────────────────
 
-async function replyToChat(
-  chatId: string,
-  messageId: string | undefined,
-  chatType: string,
-  text: string,
-) {
+async function sendText(chatId: string, messageId: string | undefined, chatType: string, text: string) {
   const content = JSON.stringify({ text });
   if (chatType === 'p2p') {
     await client.im.v1.message.create({
@@ -61,6 +84,18 @@ async function replyToChat(
       path: { message_id: messageId },
       data: { content, msg_type: 'text' },
     });
+  }
+}
+
+async function replyToChat(
+  chatId: string,
+  messageId: string | undefined,
+  chatType: string,
+  text: string,
+) {
+  const chunks = splitMessage(text);
+  for (const chunk of chunks) {
+    await sendText(chatId, messageId, chatType, chunk);
   }
 }
 
@@ -95,7 +130,27 @@ async function selfUpdate(chatId: string, messageId: string | undefined, chatTyp
   process.exit(0);
 }
 
+// ─── Tool name display map ──────────────────────────────────────────────────
+
+const TOOL_DISPLAY: Record<string, string> = {
+  Bash: '执行命令',
+  Read: '读取文件',
+  Write: '写入文件',
+  Edit: '编辑文件',
+  Glob: '搜索文件',
+  Grep: '搜索内容',
+  Agent: '调用子 Agent',
+  TodoWrite: '更新任务列表',
+};
+
+function toolLabel(name: string): string {
+  return TOOL_DISPLAY[name] ?? name;
+}
+
 // ─── Run Claude agent ──────────────────────────────────────────────────────
+
+// Throttle: send at most one progress update every N ms
+const PROGRESS_THROTTLE_MS = 20_000;
 
 async function runAgent(
   chatId: string,
@@ -136,6 +191,7 @@ async function runAgent(
   };
 
   let resultText = '';
+  let lastProgressAt = 0;
 
   try {
     await replyToChat(chatId, messageId, chatType, '🤔 正在处理，请稍候...');
@@ -143,6 +199,22 @@ async function runAgent(
     for await (const message of query({ prompt: userText, options })) {
       if (message.type === 'system' && message.subtype === 'init') {
         sessions.set(chatId, message.session_id);
+      } else if (message.type === 'assistant') {
+        // Detect tool_use calls and send throttled progress updates
+        const content = (message as any).message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'tool_use') {
+              const now = Date.now();
+              if (now - lastProgressAt >= PROGRESS_THROTTLE_MS) {
+                lastProgressAt = now;
+                const label = toolLabel(block.name ?? '');
+                replyToChat(chatId, messageId, chatType, `🔧 ${label}中...`).catch(() => {});
+              }
+              break; // one progress message per assistant turn is enough
+            }
+          }
+        }
       } else if ('result' in message) {
         resultText = message.result ?? '';
       }

@@ -1,5 +1,6 @@
 import * as Lark from '@larksuiteoapi/node-sdk';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { spawn } from 'child_process';
 
 // ─── Feishu client setup ───────────────────────────────────────────────────
 
@@ -12,18 +13,8 @@ const client = new Lark.Client(baseConfig);
 const wsClient = new Lark.WSClient(baseConfig);
 
 // ─── Session management ────────────────────────────────────────────────────
-// Each chat has its own session so conversations are continuous
 
 const sessions = new Map<string, string>(); // chat_id -> session_id
-
-// ─── Self-update: exit with code 42, restart.sh will git pull + restart ───
-
-function scheduleSelfUpdate(chatId: string, messageId: string | undefined, chatType: string) {
-  replyToChat(chatId, messageId, chatType, '✅ PR 已合并，正在拉取最新代码并重启...').then(() => {
-    console.log('[self-update] 退出以触发重启...');
-    process.exit(42);
-  });
-}
 
 // ─── Reply helper ──────────────────────────────────────────────────────────
 
@@ -48,7 +39,38 @@ async function replyToChat(
   }
 }
 
-// ─── Run Claude agent and stream result back ───────────────────────────────
+// ─── Self-update: git pull then re-exec this process ──────────────────────
+
+async function selfUpdate(chatId: string, messageId: string | undefined, chatType: string) {
+  await replyToChat(chatId, messageId, chatType, '⏳ 正在拉取最新代码...');
+
+  await new Promise<void>((resolve, reject) => {
+    const pull = spawn('git', ['pull', 'origin', 'main'], {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    });
+    pull.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`git pull 失败，退出码 ${code}`));
+    });
+  });
+
+  await replyToChat(chatId, messageId, chatType, '✅ 代码已更新，正在用新代码重启...');
+
+  // Replace current process with a fresh bun instance
+  const newProcess = spawn('bun', ['feishu-agent.ts'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    detached: true,
+    env: process.env,
+  });
+  newProcess.unref();
+
+  console.log('[self-update] 新进程已启动，当前进程退出');
+  process.exit(0);
+}
+
+// ─── Run Claude agent ──────────────────────────────────────────────────────
 
 async function runAgent(
   chatId: string,
@@ -67,19 +89,17 @@ async function runAgent(
 1. **讨论项目** - 阅读代码、解释架构、回答问题
 2. **创建 Issue** - 当用户提需求时，用 gh 命令创建 GitHub issue
 3. **创建 PR** - 在新分支上实现功能，提交后用 gh pr create 创建 PR
-4. **合并 PR 并重新部署** - 合并 PR 后输出特殊标记 [SELF_UPDATE] 触发自动重启
+4. **合并 PR** - 使用 gh pr merge --merge 合并，合并成功后在回复末尾加 [SELF_UPDATE]
 
 操作规范：
-- 创建 issue 时，使用 gh issue create，标题清晰，描述详细
-- 创建 PR 时，先创建新分支，修改代码，提交，再用 gh pr create
-- 合并 PR 时，使用 gh pr merge --merge，合并成功后在回复末尾加上 [SELF_UPDATE]
+- 创建 issue：gh issue create，标题清晰，描述详细
+- 创建 PR：新建分支 → 修改代码 → git commit → gh pr create
+- 合并 PR：gh pr merge --merge <number>，成功后回复末尾加 [SELF_UPDATE]
 - 所有 git/gh 操作在 ${process.cwd()} 目录下进行
 - 回复使用中文，保持简洁友好
 - 完成操作后输出 issue URL 或 PR URL
 
-当用户说"创建issue"、"提需求"、"记录问题"等 → 创建 GitHub issue。
-当用户说"实现"、"开发"、"创建PR" → 修改代码并创建 PR。
-当用户说"合并PR"、"部署"、"更新"、"重启" → 合并对应 PR 并在回复末尾加 [SELF_UPDATE]。`;
+当用户说"合并PR"、"部署"、"更新"、"重启" → 合并 PR 后加 [SELF_UPDATE]。`;
 
   const options: Parameters<typeof query>[0]['options'] = {
     cwd: process.cwd(),
@@ -103,22 +123,23 @@ async function runAgent(
       }
     }
 
-    if (!resultText) {
-      resultText = '✅ 操作完成';
-    }
+    if (!resultText) resultText = '✅ 操作完成';
   } catch (err) {
     console.error('[Agent error]', err);
     resultText = `❌ 出错了: ${err instanceof Error ? err.message : String(err)}`;
   }
 
-  // Check if agent signaled a self-update
   const needsUpdate = resultText.includes('[SELF_UPDATE]');
   const displayText = resultText.replace('[SELF_UPDATE]', '').trim();
 
   await replyToChat(chatId, messageId, chatType, displayText);
 
   if (needsUpdate) {
-    scheduleSelfUpdate(chatId, messageId, chatType);
+    // Run self-update in background, don't await so event loop stays alive
+    selfUpdate(chatId, messageId, chatType).catch((err) => {
+      console.error('[self-update error]', err);
+      replyToChat(chatId, messageId, chatType, `❌ 更新失败: ${err.message}`);
+    });
   }
 }
 
@@ -143,7 +164,6 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
       return;
     }
 
-    // Strip @bot mention if present
     userText = userText.replace(/@\S+/g, '').trim();
     if (!userText) return;
 

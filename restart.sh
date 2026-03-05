@@ -2,12 +2,11 @@
 # restart.sh - 守护进程：监控 feishu-agent，自动重启
 # 当 bot 以退出码 42 退出时，先 git pull 再重启
 
-set -e
 cd "$(dirname "$0")"
 
 while true; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] 启动 feishu-agent..."
-  bun feishu-agent.ts
+  bun feishu-agent.ts || true
   EXIT_CODE=$?
 
   if [ $EXIT_CODE -eq 42 ]; then

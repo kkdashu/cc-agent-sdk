@@ -16,6 +16,31 @@ const wsClient = new Lark.WSClient(baseConfig);
 
 const sessions = new Map<string, string>(); // chat_id -> session_id
 
+// ─── Deduplication: prevent processing the same message_id twice ───────────
+// Feishu may retry event delivery if it doesn't receive a timely response.
+// We track recently-seen message IDs and discard duplicates.
+
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const processedMessageIds = new Map<string, number>(); // message_id -> timestamp
+
+function isDuplicate(messageId: string): boolean {
+  const now = Date.now();
+
+  // Evict expired entries to avoid unbounded memory growth
+  for (const [id, ts] of processedMessageIds) {
+    if (now - ts > DEDUP_TTL_MS) processedMessageIds.delete(id);
+  }
+
+  if (processedMessageIds.has(messageId)) {
+    console.log(`[dedup] Skipping duplicate message: ${messageId}`);
+    return true;
+  }
+
+  processedMessageIds.set(messageId, now);
+  return false;
+}
+
 // ─── Reply helper ──────────────────────────────────────────────────────────
 
 async function replyToChat(
@@ -149,6 +174,9 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
   'im.message.receive_v1': async (data) => {
     const { message } = data;
     const { chat_id, content, message_type, chat_type, message_id } = message;
+
+    // Deduplicate: skip if we've already handled this message_id
+    if (isDuplicate(message_id)) return;
 
     if (message_type !== 'text') {
       await replyToChat(chat_id, message_id, chat_type, '请发送文本消息 📝');

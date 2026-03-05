@@ -3,11 +3,11 @@
 To install dependencies:
 
 ```bash
-pnpm install
+bun install
 ```
 
 To run:
 
 ```bash
-pnpm tsx index.ts
+bun run feishu-agent.ts
 ```

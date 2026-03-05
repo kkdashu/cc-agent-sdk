@@ -1,5 +1,6 @@
 import * as Lark from '@larksuiteoapi/node-sdk';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 
 // ─── Feishu client setup ───────────────────────────────────────────────────
@@ -212,7 +213,7 @@ async function runAgent(
         sessions.set(chatId, message.session_id);
       } else if (message.type === 'assistant') {
         // Detect tool_use calls and send throttled progress updates
-        const content = (message as any).message?.content;
+        const { content } = (message as SDKAssistantMessage).message;
         if (Array.isArray(content)) {
           for (const block of content) {
             if (block.type === 'tool_use') {

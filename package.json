@@ -4,15 +4,18 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "tsx index.ts"
+    "start": "bash restart.sh",
+    "dev": "bun feishu-agent.ts",
+    "example": "bun index.ts"
   },
-  "devDependencies": {
-    "@types/node": "latest",
-    "tsx": "^4.21.0",
+  "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.68",
-    "dotenv": "^17.3.1"
+    "@anthropic-ai/claude-agent-sdk": "0.2.69",
+    "@larksuiteoapi/node-sdk": "^1.59.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
   }
 }

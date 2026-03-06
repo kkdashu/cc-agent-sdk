@@ -10,7 +10,7 @@ mkdirSync(LOG_DIR, { recursive: true });
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-export type LogRole = 'user' | 'assistant' | 'tool' | 'system';
+export type LogRole = 'user' | 'assistant' | 'tool' | 'system' | 'feishu_raw';
 
 export interface LogEntry {
   timestamp: string;
@@ -18,6 +18,15 @@ export interface LogEntry {
   session_id?: string;
   role: LogRole;
   content: string;
+  meta?: Record<string, unknown>;
+}
+
+/** Raw Feishu message fields worth preserving */
+export interface FeishuRawMessage {
+  message_id: string;
+  chat_type: string;
+  message_type: string;
+  raw_content: string; // the original JSON string from Feishu
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -53,6 +62,21 @@ function writeEntry(entry: LogEntry): void {
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
+
+/** Log the raw Feishu message event before any processing */
+export function logFeishuRaw(chat_id: string, msg: FeishuRawMessage): void {
+  writeEntry({
+    timestamp: now(),
+    chat_id,
+    role: 'feishu_raw',
+    content: msg.raw_content,
+    meta: {
+      message_id: msg.message_id,
+      chat_type: msg.chat_type,
+      message_type: msg.message_type,
+    },
+  });
+}
 
 /** Log a message sent by the user */
 export function logUser(chat_id: string, text: string, session_id?: string): void {

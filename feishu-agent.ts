@@ -2,7 +2,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
-import { logUser, logAssistant, logTool, logSystem } from './logger';
+import { logUser, logAssistant, logTool, logSystem, logFeishuRaw } from './logger';
 
 // ─── Feishu client setup ───────────────────────────────────────────────────
 
@@ -273,6 +273,9 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
 
     // Deduplicate: skip if we've already handled this message_id
     if (isDuplicate(message_id)) return;
+
+    // Log the raw Feishu message immediately, before any processing
+    logFeishuRaw(chat_id, { message_id, chat_type, message_type, raw_content: content });
 
     if (message_type !== 'text') {
       await replyToChat(chat_id, message_id, chat_type, '请发送文本消息 📝');

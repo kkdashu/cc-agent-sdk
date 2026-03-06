@@ -2,6 +2,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
+import { logUser, logAssistant, logTool, logSystem } from './logger';
 
 // ─── Feishu client setup ───────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ async function replyToChat(
 // ─── Self-update: git pull then re-exec this process ──────────────────────
 
 async function selfUpdate(chatId: string, messageId: string | undefined, chatType: string) {
+  logSystem(chatId, 'self-update: started');
   await replyToChat(chatId, messageId, chatType, '⏳ 正在拉取最新代码...');
 
   await new Promise<void>((resolve, reject) => {
@@ -128,6 +130,7 @@ async function selfUpdate(chatId: string, messageId: string | undefined, chatTyp
   });
 
   await replyToChat(chatId, messageId, chatType, '✅ 代码已更新，正在用新代码重启...');
+  logSystem(chatId, 'self-update: restarting process');
 
   // Replace current process with a fresh bun instance
   const newProcess = spawn('bun', ['feishu-agent.ts'], {
@@ -172,6 +175,9 @@ async function runAgent(
 ) {
   const sessionId = sessions.get(chatId);
 
+  // Log incoming user message
+  logUser(chatId, userText, sessionId);
+
   const systemPrompt = `你是一个项目迭代助手，帮助用户通过飞书机器人管理和迭代这个 GitHub 项目。
 
 项目路径: ${process.cwd()}
@@ -211,6 +217,7 @@ async function runAgent(
     for await (const message of query({ prompt: userText, options })) {
       if (message.type === 'system' && message.subtype === 'init') {
         sessions.set(chatId, message.session_id);
+        logSystem(chatId, `session init: ${message.session_id}`, message.session_id);
       } else if (message.type === 'assistant') {
         // Detect tool_use calls and send throttled progress updates
         const { content } = (message as SDKAssistantMessage).message;
@@ -218,6 +225,7 @@ async function runAgent(
           for (const block of content) {
             if (block.type === 'tool_use') {
               const now = Date.now();
+              logTool(chatId, block.name ?? 'unknown', sessions.get(chatId));
               if (now - lastProgressAt >= PROGRESS_THROTTLE_MS) {
                 lastProgressAt = now;
                 const label = toolLabel(block.name ?? '');
@@ -236,10 +244,14 @@ async function runAgent(
   } catch (err) {
     console.error('[Agent error]', err);
     resultText = `❌ 出错了: ${err instanceof Error ? err.message : String(err)}`;
+    logSystem(chatId, `agent error: ${resultText}`, sessions.get(chatId));
   }
 
   const needsUpdate = resultText.includes('[SELF_UPDATE]');
   const displayText = resultText.replace('[SELF_UPDATE]', '').trim();
+
+  // Log assistant's final reply
+  logAssistant(chatId, displayText, sessions.get(chatId));
 
   await replyToChat(chatId, messageId, chatType, displayText);
 

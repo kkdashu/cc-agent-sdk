@@ -18,6 +18,18 @@ const wsClient = new Lark.WSClient(baseConfig);
 
 const sessions = new Map<string, string>(); // chat_id -> session_id
 
+// ─── Per-chat serial queue ─────────────────────────────────────────────────
+// Ensures messages from the same chat are processed one at a time,
+// preventing session race conditions when users send multiple messages quickly.
+
+const chatQueues = new Map<string, Promise<void>>();
+
+function enqueueForChat(chatId: string, task: () => Promise<void>) {
+  const prev = chatQueues.get(chatId) ?? Promise.resolve();
+  const next = prev.then(task).catch(() => {});
+  chatQueues.set(chatId, next);
+}
+
 // ─── Deduplication: prevent processing the same message_id twice ───────────
 // Feishu may retry event delivery if it doesn't receive a timely response.
 // We track recently-seen message IDs and discard duplicates.
@@ -296,9 +308,7 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
 
     console.log(`[${chat_type}] ${chat_id}: ${userText}`);
 
-    runAgent(chat_id, message_id, chat_type, userText).catch((err) => {
-      console.error('[runAgent unhandled]', err);
-    });
+    enqueueForChat(chat_id, () => runAgent(chat_id, message_id, chat_type, userText));
   },
 });
 
